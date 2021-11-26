@@ -1,0 +1,7 @@
+
+
+1. configtx.yaml中hostname主机名是怎么识别的？docker好像没有？
+2. configtx.yaml中引用的证书地址都是本机相对地址?
+	因为创建通道msp---需要包含成员组织的msp
+
+	

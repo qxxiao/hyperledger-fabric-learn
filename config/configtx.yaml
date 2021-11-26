@@ -1,0 +1,265 @@
+# 基于fabric-sample/test-network/configt/configtx.yaml，进行修改
+---
+################################################################################
+#   Section: Organizations
+#
+#   - 这部分定义不同组织实体，以供后面的配置引用
+################################################################################
+Organizations:
+    - &OrdererOrg # 排序组织
+      Name: OrdererOrg # 标识组织的非正式名称
+      ID: OrdererMSP # 组织的MSP ID,由通道策略引用
+
+      # 组织创建的MSP文件夹的路径
+      # configtxgen工具将使用此MSP文件夹来创建通道MSP,将被传输到通道MSP并存储在通道配置中
+      # (用于创建通道MSP的MSP文件夹仅包含公共证书。如此一来，可以在本地生成MSP文件夹，然后将MSP发送到创建通道的组织)
+      ### 根据实际目录修改(相对本文件)
+      MSPDir: ../organizations/crypto/ordererOrganizations/test.com/msp
+      # 本层级策略。组织策略，规范路径为/Channel/<Application|Orderer>/<OrgName>/<PolicyName>
+      # 定义一组可以引用的通道成员的签名策略, 组织级别的策略, 满足该Rule就可以代表该组织有该权利,被通道级别的策略所引用
+      Policies:
+          Readers:
+              Type: Signature
+              Rule: "OR('OrdererMSP.member')"
+          Writers:
+              Type: Signature
+              Rule: "OR('OrdererMSP.member')"
+          Admins:
+              Type: Signature
+              Rule: "OR('OrdererMSP.admin')"
+      # 排序节点的端点
+      OrdererEndpoints:
+          - orderer.test.com:7050
+
+    - &Org1
+      Name: Org1MSP
+      ID: Org1MSP
+      MSPDir: ../organizations/crypto/peerOrganizations/org1.test.com/msp
+      # 本层级策略。组织策略，规范路径为/Channel/<Application|Orderer>/<OrgName>/<PolicyName>
+      # 组织可以更新其通道MSP或设置锚节点，而无需其他通道成员的批准
+      # 定义一组可以引用的通道成员的签名策略, 组织级别的策略, 满足该Rule就可以代表该组织有该权利,被通道级别的策略所引用
+      # 例如：任意的组织MSP中成员都可以代表组织进行endorsement;只有admin身份可以代表组织的admin角色/权利
+      Policies:
+          Readers:  # 可读
+              Type: Signature # 组织的签名策略，只要符合这个规则就是满足该策略
+              Rule: "OR('Org1MSP.admin', 'Org1MSP.peer', 'Org1MSP.client')"
+          Writers:  # 可写
+              Type: Signature
+              Rule: "OR('Org1MSP.admin', 'Org1MSP.client')"
+          Admins:   # Admins策略---只有admin的签名满足
+              Type: Signature
+              Rule: "OR('Org1MSP.admin')"
+          Endorsement: # 背书---任何peer签名作为背书
+              Type: Signature
+              Rule: "OR('Org1MSP.peer')"
+      # 组织的锚节点
+      AnchorPeers:
+          #组织间通信的锚节点。仅在创世区块内编码
+          - Host: peer0.org1.test.com
+            Port: 7051
+
+    - &Org2
+      Name: Org2MSP
+      ID: Org2MSP
+      MSPDir: ../organizations/crypto/peerOrganizations/org2.test.com/msp
+      Policies:
+          Readers:
+              Type: Signature
+              Rule: "OR('Org2MSP.admin', 'Org2MSP.peer', 'Org2MSP.client')"
+          Writers:
+              Type: Signature
+              Rule: "OR('Org2MSP.admin', 'Org2MSP.client')"
+          Admins:
+              Type: Signature
+              Rule: "OR('Org2MSP.admin')"
+          Endorsement:
+              Type: Signature
+              Rule: "OR('Org2MSP.peer')"
+      AnchorPeers:
+          - Host: peer0.org2.test.com
+            Port: 9051
+
+################################################################################
+#   SECTION: Capabilities
+#
+#   定义了fabric程序要加入网络所必须支持的特性
+################################################################################
+Capabilities:
+    Channel: &ChannelCapabilities # 由Peer节点和Orderer节点运行的Fabric的最低版本
+        V2_0: true
+
+    Orderer: &OrdererCapabilities #控制Orderer节点使用的功能
+        V2_0: true
+
+    Application: &ApplicationCapabilities # 控制Peer节点使用的功能
+        V2_0: true
+
+################################################################################
+#   SECTION: Application
+#   定义了控制Peer组织如何与应用程序通道交互的策略
+#        - 写入通道账本
+#        - 查询通道事件
+#        - 需要批准链码定义或给更新通道配置的请求签名的Peer组织的数量
+#   应用通道的配置，定义要写入创世区块或配置交易的应用参数(和应用通道配置相关)
+################################################################################
+Application: &ApplicationDefaults 
+    Organizations:
+    # 对于application策略，规范为/Channel/Application/<PolicyName>
+    # 默认策略，则所有Peer组织都将能够读取数据并将数据写入账本
+    # 
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: 'ANY Readers' # 引用给定组织(通道组织)的策略, 任意Readers签名策略
+        Writers:
+            Type: ImplicitMeta
+            Rule: 'ANY Writers' # 引用给定组织(通道组织)的策略, 任意Writers策略
+        # 修改本层级配置的许可规则等
+        Admins:
+            Type: ImplicitMeta  
+            Rule: 'MAJORITY Admins' # 成员的大多数Admins签名
+        LifecycleEndorsement: # 批准链码定义-提到通道
+            Type: ImplicitMeta
+            Rule: 'MAJORITY Endorsement' # 大部分成员的Endorsement签名策略
+        Endorsement: # 交易背书 path: /Channel/Application/Endorsement
+            Type: ImplicitMeta
+            Rule: 'MAJORITY Endorsement'
+    Capabilities:
+        <<: *ApplicationCapabilities
+
+################################################################################
+#   SECTION: Orderer 排序通道
+#
+#   本节定义了编码到创世区块(排序服务的系统通道)的相关参数
+#   在通道配置中存储作为共识者集合的成员的每个Orderer节点的端点信息
+################################################################################
+Orderer: &OrdererDefaults
+    OrdererType: etcdraft # 要启用的排序节点实现, 共识算法 solo/etcdraft
+    EtcdRaft:
+        Consenters: # 定义其组成的多个排序节点成员
+            - Host: orderer.test.com
+              Port: 7050
+              ClientTLSCert: ../organizations/crypto/ordererOrganizations/test.com/orderers/orderer.test.com/tls/server.crt
+              ServerTLSCert: ../organizations/crypto/ordererOrganizations/test.com/orderers/orderer.test.com/tls/server.crt
+    # 客户端和peer节点可以连接到排序节点的地址
+    # 组织的TLS验证。更好的方法是在组织定义里写OrdererEndpoints
+    Addresses:
+        - orderer.test.com:7050
+    # Batch Timeout: 区块打包的最大超时时间 (到了该时间就打包区块)
+    BatchTimeout: 2s
+    # Batch Size: 区块打包的最大包含交易数（orderer端切分区块的参数）
+    BatchSize:
+        # Max Message Count: 一个区块里最大的交易数
+        MaxMessageCount: 10
+        # Absolute Max Bytes:一个区块的最大字节数
+        AbsoluteMaxBytes: 99 MB
+        # Preferred Max Bytes: 建议字节数，如果一个交易消息的大小超过了这个值, 就会被放入另外一个更大的区块中
+        PreferredMaxBytes: 512 KB
+    # MaxChannels: 0    ## 【可选项】表示Orderer允许的最大通道数， 默认0表示没有最大通道数
+
+    # Organizations is the list of orgs which are defined as participants on
+    # the orderer side of the network
+    Organizations: ## 参与维护Orderer的组织，默认为空
+    # Policies defines the set of policies at this level of the config tree
+    # For Orderer policies, their canonical path is
+    #   /Channel/Orderer/<PolicyName>
+    # 用于管理通道共识者集合的策略
+    # 大多数Orderer管理员批准添加或删除Orderer节点,组织,或对分块切割参数进行更新
+    # 与Application配置类似管理通道的Orderer节点(其签名策略是属于排序服务的组织)
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: 'ANY Readers'
+        Writers:
+            Type: ImplicitMeta
+            Rule: 'ANY Writers'
+        Admins:
+            Type: ImplicitMeta
+            Rule: 'MAJORITY Admins' # 则需要大多数Orderer组织批准添加或删除Orderer节点
+        # BlockValidation specifies what signatures must be included in the block
+        # from the orderer for the peer to validate it.
+        BlockValidation:
+            Type: ImplicitMeta
+            Rule: 'ANY Writers' # 确认添加到通道的新块是由作为通道共识者集合一部分的Orderer节点生成的(任何具有Writers签名策略的Orderer组织都可以创建和验证通道的块)
+    Capabilities:
+        <<: *OrdererCapabilities
+
+################################################################################
+#   CHANNEL
+#   管理最高层级通道配置的策略,对于应用程序通道,这些策略控制哈希算法，用于创建新块的数据哈希结构以及通道功能级别;
+#       在系统通道中，这些策略还控制Peer组织的联盟的创建或删除
+#   默认策略要求大多数排序服务管理员需要批准对系统通道中这些值的更新。在应用程序通道中，更改需要获得大多数通道成员的批准
+################################################################################
+Channel: &ChannelDefaults # 路径为/Channel/<PolicyName>
+    Policies:
+        # Who may invoke the 'Deliver' API
+        Readers:
+            Type: ImplicitMeta
+            Rule: 'ANY Readers'
+        # Who may invoke the 'Broadcast' API 
+        Writers:
+            Type: ImplicitMeta
+            Rule: 'ANY Writers'
+        # 修改本层级配置的许可规则
+        Admins:
+            Type: ImplicitMeta
+            Rule: 'MAJORITY Admins' # 大多数管理员
+    Capabilities:
+        <<: *ChannelCapabilities
+
+################################################################################
+#   Profile
+#
+#   定义用于configtxgen工具的配置入口 -profile
+#         1. 为系统通道写入通道创世块
+#         2. 使用此配置为应用程序通道创建通道创建交易
+################################################################################
+Profiles:
+    # # 用于创建系统通道创世块，定义排序通道和一个联盟
+    # # configtxgen -profile TwoOrgsOrdererGenesis -outputBlock genesis.block  # 废弃
+    # TwoOrgsOrdererGenesis: # 包含两个组织的一个联盟/通道定义，以及默认配置
+    #     <<: *ChannelDefaults # 引用通道的默认配置/策略
+    #     Orderer:
+    #         <<: *OrdererDefaults # 排序服务的节点和配置
+    #         Organizations:
+    #             - *OrdererOrg # OrdererOrg成为排序服务的唯一管理员
+    #         Capabilities:
+    #             <<: *OrdererCapabilities
+    #     Consortiums:
+    #         SampleConsortium: # 联盟中每个成员的通道MSP都包含在系统通道中,从而允许他们创建新的应用程序通道并将联盟成员添加到新通道中
+    #             Organizations:
+    #                 - *Org1
+    #                 - *Org2
+
+    # # 创建应用程序通道---用于创建通道交易Tx
+    # # configtxgen -profile TwoOrgsChannel -outputCreateChannelTx  channel.tx -channelID $CHANNEL_NAME
+    # TwoOrgsChannel:
+    #     Consortium: SampleConsortium # 通道所关联的联盟名称
+    #     <<: *ChannelDefaults # 使用Channel部分中的默认策略
+    #     Application:
+    #         <<: *ApplicationDefaults # 使用Application部分中的默认策略来控制Peer组织如何与通道进行交互
+    #         Organizations:
+    #             - *Org1
+    #             - *Org2
+    #         Capabilities:
+    #             <<: *ApplicationCapabilities
+
+    # # configtxgen -profile TwoOrgsChannel -outputAnchorPeersUpdate ./channel-artifacts/Org1MSPanchors.tx -channelID mychannel -asOrg Org1MSP
+    # # configtxgen -profile TwoOrgsChannel -outputAnchorPeersUpdate ./channel-artifacts/Org2MSPanchors.tx -channelID mychannel -asOrg Org2MSP
+    
+    ###########################################################
+    # use v2.3直接创建应用程序通道，不需要系统通道相关的，也不用定义联盟等
+    # 概念更加清晰
+    TwoOrgsApplicationGenesis:
+        <<: *ChannelDefaults
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+            Capabilities: *OrdererCapabilities
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+                - *Org2
+            Capabilities: *ApplicationCapabilities
